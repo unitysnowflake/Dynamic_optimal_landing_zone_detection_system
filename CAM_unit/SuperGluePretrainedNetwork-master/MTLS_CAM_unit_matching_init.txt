@@ -1,0 +1,4 @@
+python MTLS_CAM_unit_matching.py `
+  --map "E:\Applied_Maths_Informatics_Studying\Thesis\Mars_Terrain_Landing_System\CAM_unit\SuperGluePretrainedNetwork-master\DTMs\DTM_P1.png" `
+  --camera "E:\Applied_Maths_Informatics_Studying\Thesis\Mars_Terrain_Landing_System\CAM_unit\SuperGluePretrainedNetwork-master\CAM_images\CAM_P1.png" `
+  --output_dir "E:\Applied_Maths_Informatics_Studying\Thesis\Mars_Terrain_Landing_System\CAM_unit\SuperGluePretrainedNetwork-master\Results\P1"

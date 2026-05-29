@@ -1,0 +1,130 @@
+import bpy
+import csv
+import os
+import time
+from mathutils import Vector
+
+W = 512
+H = 512
+OUT_CSV = r"E:\Applied_Maths_Informatics_Studying\Thesis_presentation\LiDAR_unit\LiDAR_scans"
+MAX_DIST = 1e6
+EPS = 1e-7
+
+
+def make_safe_output_path(user_path):
+    p = os.path.abspath(os.path.normpath(user_path))
+
+    invalid_chars = set('<>:"|?*')
+    _, after_drive = os.path.splitdrive(p)
+    if any((c in invalid_chars) for c in after_drive):
+        raise ValueError(f"Invalid character in path: {user_path!r}")
+
+    if os.path.isdir(p) or user_path.endswith(os.path.sep):
+        dirname = p
+        filename = "LiDAR_P1.csv"
+        out_file = os.path.join(dirname, filename)
+    else:
+        base, ext = os.path.splitext(p)
+        if ext == "":
+            dirname = p
+            filename = "LiDAR_P1.csv"
+            out_file = os.path.join(dirname, filename)
+        else:
+            dirname = os.path.dirname(p) or "."
+            out_file = p
+
+    os.makedirs(dirname, exist_ok=True)
+    return out_file
+
+
+try:
+    OUT_CSV_FILE = make_safe_output_path(OUT_CSV)
+except Exception as e:
+    print("Path error:", e)
+    raise
+
+scene = bpy.context.scene
+cam_obj = scene.camera
+if cam_obj is None:
+    raise RuntimeError("Scene has no active camera. Set scene.camera first.")
+
+cam_data = cam_obj.data
+depsgraph = bpy.context.evaluated_depsgraph_get()
+
+if cam_data.type != 'PERSP' and cam_data.type != 'ORTHO':
+    raise RuntimeError("This script expects a PERSP or ORTHO camera.")
+
+start_time = time.time()
+
+frame = cam_data.view_frame(scene=scene)
+bl, br, tr, tl = frame[0], frame[1], frame[2], frame[3]
+
+origin_world = cam_obj.matrix_world.translation.copy()
+cam_rot = cam_obj.matrix_world.to_3x3()
+
+# Blender camera forward in world space: local -Z
+cam_forward_world = (cam_rot @ Vector((0.0, 0.0, -1.0))).normalized()
+
+rows = []
+
+for j in range(H):
+    v = (j + 0.5) / H
+    v_vec = bl + (tl - bl) * v
+
+    for i in range(W):
+        u = (i + 0.5) / W
+        local_pt = v_vec + (br - bl) * u
+
+        if cam_data.type == 'PERSP':
+            dir_local = local_pt.normalized()
+            dir_world = cam_rot @ dir_local
+            if dir_world.length < EPS:
+                continue
+            dir_world.normalize()
+            ray_origin = origin_world
+        else:
+            ray_origin = cam_obj.matrix_world @ local_pt
+            dir_world = cam_forward_world.copy()
+
+        hit, loc, norm, face_index, obj, matrix = scene.ray_cast(
+            depsgraph, ray_origin, dir_world, distance=MAX_DIST
+        )
+
+        if hit:
+            depth = (loc - origin_world).dot(cam_forward_world)
+            if depth <= 0.0:
+                continue
+
+            rows.append((i + 1, j + 1, depth))
+
+if not rows:
+    raise RuntimeError("No ray hits were recorded.")
+
+with open(OUT_CSV_FILE, 'w', newline='') as f:
+    w = csv.writer(f)
+    w.writerow([
+        'PIXEL_X', 'PIXEL_Y', 'DEPTH',
+        'CAM_X', 'CAM_Y', 'CAM_Z',
+    ])
+    for pixel_x, pixel_y, depth in rows:
+        u = (pixel_x - 0.5) / W
+        v = (pixel_y - 0.5) / H
+        local_v = bl + (tl - bl) * v
+        local_pt = local_v + (br - bl) * u
+
+        if cam_data.type == 'PERSP':
+            dir_local = local_pt.normalized()
+            scale = depth / max(-dir_local.z, EPS)
+            cam_hit = dir_local * scale
+        else:
+            cam_hit = local_pt + Vector((0.0, 0.0, -depth))
+
+        w.writerow([
+            pixel_x, pixel_y, depth,
+            cam_hit.x, cam_hit.y, cam_hit.z,
+        ])
+
+duration = time.time() - start_time
+depths = [r[2] for r in rows]
+print(f"LiDAR done: {len(rows)} hits saved to {OUT_CSV_FILE} (time {duration:.1f}s)")
+print(f"Depth range: min={min(depths):.6f}, max={max(depths):.6f}")

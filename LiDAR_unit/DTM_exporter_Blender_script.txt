@@ -1,0 +1,100 @@
+import bpy
+import csv
+import random
+import math
+from mathutils import Vector
+
+OUTPUT_PATH = r"E:\Applied_Maths_Informatics_Studying\Thesis\MTLS_New\LiDAR_unit\DTMs\DTM_P1.csv"
+
+NUM_SAMPLES = 200000
+
+USE_EVALUATED_MESH = True
+
+RANDOM_SEED = 12345
+
+def triangle_area(v0, v1, v2):
+    return 0.5 * (v1 - v0).cross(v2 - v0).length
+
+def random_point_on_triangle(v0, v1, v2):
+    # Uniform sampling on triangle
+    r1 = random.random()
+    r2 = random.random()
+    sqrt_r1 = math.sqrt(r1)
+    a = 1.0 - sqrt_r1
+    b = sqrt_r1 * (1.0 - r2)
+    c = sqrt_r1 * r2
+    return a * v0 + b * v1 + c * v2
+
+obj = bpy.context.active_object
+if obj is None or obj.type != 'MESH':
+    raise Exception("Select a mesh object")
+
+random.seed(RANDOM_SEED)
+
+depsgraph = bpy.context.evaluated_depsgraph_get()
+
+if USE_EVALUATED_MESH:
+    obj_eval = obj.evaluated_get(depsgraph)
+    mesh = obj_eval.to_mesh()
+else:
+    mesh = obj.data
+
+mesh.calc_loop_triangles()
+
+matrix = obj.matrix_world
+
+tris = []
+areas = []
+total_area = 0.0
+
+for tri in mesh.loop_triangles:
+    v0 = matrix @ mesh.vertices[tri.vertices[0]].co
+    v1 = matrix @ mesh.vertices[tri.vertices[1]].co
+    v2 = matrix @ mesh.vertices[tri.vertices[2]].co
+
+    area = triangle_area(v0, v1, v2)
+    if area <= 0.0:
+        continue
+
+    tris.append((v0, v1, v2))
+    areas.append(area)
+    total_area += area
+
+if not tris:
+    raise Exception("No valid triangles found in mesh")
+
+cum_areas = []
+running = 0.0
+for a in areas:
+    running += a
+    cum_areas.append(running)
+
+def choose_triangle():
+    r = random.random() * total_area
+    lo = 0
+    hi = len(cum_areas) - 1
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if cum_areas[mid] < r:
+            lo = mid + 1
+        else:
+            hi = mid
+    return tris[lo]
+
+points = []
+for _ in range(NUM_SAMPLES):
+    v0, v1, v2 = choose_triangle()
+    p = random_point_on_triangle(v0, v1, v2)
+    points.append(p)
+
+with open(OUTPUT_PATH, "w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow(["X", "Y", "Z"])
+    for p in points:
+        writer.writerow([p.x, p.y, p.z])
+
+if USE_EVALUATED_MESH:
+    obj_eval.to_mesh_clear()
+
+print(f"Dense DTM exported: {len(points)} points -> {OUTPUT_PATH}")
+print(f"Total surface area used: {total_area:.6f}")

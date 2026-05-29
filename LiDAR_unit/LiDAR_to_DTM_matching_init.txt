@@ -1,0 +1,1 @@
+python LiDAR_to_DTM_matching.py --lidar_csv LiDAR_P1.csv --dtm_csv DTM_P1.csv --result_file lidar_result_coordinates_P1.txt

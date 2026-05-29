@@ -1,0 +1,4 @@
+Значение Half_range_P1 и Half_range_P2 для скрипта сопоставления MTLS_CAM_unit_matching.py
+
+Phase 1: 1790 for 5000 meters
+Phase 2: 725 for 2000 meters
